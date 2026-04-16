@@ -1,0 +1,47 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 🔥 GLOBAL RESET */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+/* 🔥 BODY STYLE (Amazon-like clean look) */
+body {
+  font-family: Arial, Helvetica, sans-serif;
+  background-color: #f3f4f6; /* light gray */
+  color: #111827;
+}
+
+/* 🔥 SMOOTH SCROLL */
+html {
+  scroll-behavior: smooth;
+}
+
+/* 🔥 BUTTON DEFAULT STYLE */
+button {
+  cursor: pointer;
+  transition: all 0.2s ease-in-out;
+}
+
+/* 🔥 BUTTON HOVER */
+button:hover {
+  transform: scale(1.03);
+}
+
+/* 🔥 CARD SHADOW (used in UI) */
+.card {
+  @apply bg-white rounded-2xl shadow-lg p-5;
+}
+
+/* 🔥 INPUT STYLE */
+input {
+  @apply border border-gray-300 rounded-lg px-3 py-2 outline-none;
+}
+
+input:focus {
+  @apply border-blue-500 ring-2 ring-blue-200;
+}
