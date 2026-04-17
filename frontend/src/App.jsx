@@ -1,467 +1,220 @@
 import { useEffect, useState } from "react";
 
 function App() {
-  const [products, setProducts] = useState([]);
   const [allProducts, setAllProducts] = useState([]);
+  const [products, setProducts] = useState([]);
   const [cartItems, setCartItems] = useState([]);
-
-  const [showCart, setShowCart] = useState(false);
+  const [myOrders, setMyOrders] = useState([]);
+  const [view, setView] = useState("shop"); 
+  
+  // --- FILTER STATES ---
+  const [category, setCategory] = useState("All");
+  const [priceRange, setPriceRange] = useState(150000); // Default to max
   const [search, setSearch] = useState("");
 
-  const [filters, setFilters] = useState({
-    category: "",
-    brands: [],
-    colors: [],
-  });
-
-  const [user, setUser] = useState(null);
-  const [isRegister, setIsRegister] = useState(false);
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-
+  const [user, setUser] = useState({ id: 1, name: "sathish", email: "test@me.com" });
   const [address, setAddress] = useState("");
   const [pincode, setPincode] = useState("");
-  const [selectedProduct, setSelectedProduct] = useState(null);
-  const [wishlist, setWishlist] = useState(
-  JSON.parse(localStorage.getItem("wishlist")) || []
-  );
-  const [reviews, setReviews] = useState({});
-  const [showSummary, setShowSummary] = useState(false);
+  const [orderStatus, setOrderStatus] = useState(null);
 
-  const user_id = user?.id;
+  const API_BASE = "http://localhost:8000";
 
-  // ---------------- FETCH ----------------
-  const fetchProducts = async () => {
-    const res = await fetch("http://localhost:8000/products/");
-    const data = await res.json();
+  // --- 1. DATA FETCHING ---
+  const fetchData = async () => {
+    try {
+      const pRes = await fetch(`${API_BASE}/products/`);
+      const pData = await pRes.json();
+      setAllProducts(pData || []);
+      setProducts(pData || []);
 
-    const clean = data.map(p => ({
-      ...p,
-      brand: p.brand || "unknown",
-      color: p.color || "unknown",
-      category: p.category || "mobile"
-    }));
-
-    setProducts(clean);
-    setAllProducts(clean);
+      if (user) {
+        const cRes = await fetch(`${API_BASE}/cart/${user.id}`);
+        const cData = await cRes.json();
+        setCartItems(cData || []);
+      }
+    } catch (err) { console.error("Backend offline"); }
   };
 
-  const fetchCart = async () => {
-    if (!user_id) return;
-    const res = await fetch(`http://localhost:8000/cart/${user_id}`);
-    const data = await res.json();
-    setCartItems(data);
-  };
+  useEffect(() => { fetchData(); }, [user]);
 
-  useEffect(() => { fetchProducts(); }, []);
-  useEffect(() => { fetchCart(); }, [user]);
-
-  // ---------------- FILTER ----------------
+  // --- 2. FILTER LOGIC ---
   useEffect(() => {
-    let filtered = [...allProducts];
-
-    if (filters.category) {
-      filtered = filtered.filter(p => p.category === filters.category);
+    let filtered = allProducts;
+    if (category !== "All") {
+      filtered = filtered.filter(p => p.category === category);
     }
-
-    if (filters.brands.length > 0) {
-      filtered = filtered.filter(p => filters.brands.includes(p.brand));
-    }
-
-    if (filters.colors.length > 0) {
-      filtered = filtered.filter(p => filters.colors.includes(p.color));
-    }
-
+    filtered = filtered.filter(p => p.price <= priceRange);
     if (search) {
-      filtered = filtered.filter(p =>
-        p.name.toLowerCase().includes(search.toLowerCase())
-      );
+      filtered = filtered.filter(p => p.name.toLowerCase().includes(search.toLowerCase()));
     }
-
     setProducts(filtered);
-  }, [filters, search, allProducts]);
+  }, [category, priceRange, search, allProducts]);
 
-  const handleCheckbox = (type, value) => {
-    setFilters(prev => {
-      const list = prev[type];
-      return list.includes(value)
-        ? { ...prev, [type]: list.filter(v => v !== value) }
-        : { ...prev, [type]: [...list, value] };
-    });
-  };
-
-  const resetFilters = () => {
-    setFilters({ category: "", brands: [], colors: [] });
+  // --- NEW: CLEAR FILTERS FUNCTION ---
+  const clearFilters = () => {
+    setCategory("All");
+    setPriceRange(150000);
     setSearch("");
   };
 
-  const uniqueBrands = [...new Set(allProducts.map(p => p.brand))];
-  const uniqueColors = [...new Set(allProducts.map(p => p.color))];
+  // --- 3. CART CALCULATIONS ---
+  const cartWithDetails = cartItems.map(item => {
+    const product = allProducts.find(p => p.id === item.product_id || p._id === item.product_id);
+    return { ...item, details: product };
+  });
+  const subtotal = cartWithDetails.reduce((sum, item) => sum + (item.details?.price || 0), 0);
+  const total = subtotal + (subtotal * 0.18);
 
-  // ---------------- AUTH ----------------
-  const register = async () => {
-    await fetch("http://localhost:8000/users/register", {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({ name, email, password }),
-    });
-    alert("Registered ✅");
-    setIsRegister(false);
-  };
-
-  const login = async () => {
-    const res = await fetch("http://localhost:8000/users/login", {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({ email, password }),
-    });
-
-    const data = await res.json();
-    if (data.user) setUser(data.user);
-    else alert("Login failed");
-  };
-
-  const logout = () => {
-    setUser(null);
-    setCartItems([]);
-  };
-
-  // ---------------- CART ----------------
-  const addToCart = async (productId) => {
-    if (!user) return alert("Login first");
-
-    await fetch("http://127.0.0.1:8000/cart/add", {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({
-        user_id: user.id,
-        product_id: productId,
-        quantity: 1
-      })
-    });
-
-    fetchCart();
-  };
-
-  const removeItem = async (id) => {
-    await fetch(`http://localhost:8000/cart/${id}`, { method: "DELETE" });
-    fetchCart();
-  };
-  // ❤️ Wishlist
-  const toggleWishlist = (product) => {
-  let updated;
-  if (wishlist.find(p => p.id === product.id)) {
-    updated = wishlist.filter(p => p.id !== product.id);
-  } else {
-    updated = [...wishlist, product];
-  }
-  setWishlist(updated);
-  localStorage.setItem("wishlist", JSON.stringify(updated));
-  };
-
-// ⭐ Reviews
-const addReview = (productId, text) => {
-  const newReviews = {
-    ...reviews,
-    [productId]: [...(reviews[productId] || []), text]
-  };
-  setReviews(newReviews);
-};
-
-  // ---------------- CHECKOUT ----------------
   const handleCheckout = async () => {
-  try {
-    console.log("🔥 Checkout clicked");
-
-    if (!user) return alert("Login first");
-    if (!address || !pincode) return alert("Enter address");
-
-    const res = await fetch(`http://127.0.0.1:8000/orders/create-payment/${user.id}`, {
-      method: "POST"
-    });
-
-    console.log("STATUS:", res.status);
-
-    const text = await res.text();
-    console.log("RAW RESPONSE:", text);
-
-    let data;
-    try {
-      data = JSON.parse(text);
-    } catch (e) {
-      alert("Backend not returning JSON");
-      return;
-    }
-
-    console.log("Parsed data:", data);
-
-    if (!data.order_id) {
-      alert("Order ID missing");
-      return;
-    }
-
-    if (!window.Razorpay) {
-      alert("Razorpay not loaded");
-      return;
-    }
-
+    if (!window.Razorpay) return alert("Razorpay script missing!");
     const options = {
-      key: "rzp_test_SblFaP6yiTzSNo",
-      amount: data.amount,
+      key: "rzp_test_YOUR_KEY",
+      amount: Math.round(total * 100),
       currency: "INR",
       name: "MyShop",
-      order_id: data.order_id,
-      handler: function () {
-        alert("Payment Success");
+      handler: function (response) {
+        const orderInfo = { id: "ORD-"+Date.now(), tracking: "TRK-"+Math.random().toString(36).substr(2, 9) };
+        setMyOrders([orderInfo, ...myOrders]);
+        setOrderStatus(orderInfo);
+        setCartItems([]);
       }
     };
+    new window.Razorpay(options).open();
+  };
 
-    const rzp = new window.Razorpay(options);
-    rzp.open();
-
-  } catch (err) {
-    console.error("🔥 ERROR:", err);
-    alert("Something broke");
-  }
-};
-  if (selectedProduct) {
-  return (
-    <div className="p-6">
-      <button onClick={()=>setSelectedProduct(null)}>← Back</button>
-
-      <div className="bg-white p-6 mt-4">
-        <img src={selectedProduct.image} className="h-60"/>
-
-        <h2>{selectedProduct.name}</h2>
-        <p>₹{selectedProduct.price}</p>
-        <p>{selectedProduct.description}</p>
-
-        <button onClick={()=>addToCart(selectedProduct.id)}>
-          Add to Cart
-        </button>
-
-        <h3 className="mt-4">Reviews</h3>
-        {(reviews[selectedProduct.id] || []).map((r,i)=>(
-          <p key={i}>⭐ {r}</p>
-        ))}
-
-        <input
-          placeholder="Write review..."
-          onKeyDown={(e)=>{
-            if(e.key==="Enter"){
-              addReview(selectedProduct.id, e.target.value);
-              e.target.value="";
-            }
-          }}
-        />
-      </div>
-    </div>
-  );
-}  
-  // ---------------- UI ----------------
   return (
     <div className="bg-[#EAEDED] min-h-screen">
-
-    {/* 🔥 AMAZON NAVBAR */}
-    <div className="bg-[#131921] text-white flex items-center px-6 py-3 gap-6 sticky top-0 z-50 shadow">
-
-      <h1 className="text-2xl font-bold cursor-pointer">🛒 MyShop</h1>
-
-      <input
-        placeholder="Search Amazon-like products..."
-        value={search}
-        onChange={(e)=>setSearch(e.target.value)}
-        className="flex-1 px-4 py-2 rounded text-black focus:outline-none"
-      />
-
-      {user ? (
-        <>
-          <span className="text-sm">Hello, {user.name}</span>
-          <button onClick={logout} className="hover:underline">Logout</button>
-        </>
-      ) : (
-        <div className="flex gap-2 items-center flex-wrap">
-          {isRegister && (
-            <input placeholder="Name" onChange={e=>setName(e.target.value)} className="px-2 py-1 text-black rounded"/>
-          )}
-          <input placeholder="Email" onChange={e=>setEmail(e.target.value)} className="px-2 py-1 text-black rounded"/>
-          <input type="password" placeholder="Password" onChange={e=>setPassword(e.target.value)} className="px-2 py-1 text-black rounded"/>
-
-          {isRegister ? (
-            <button onClick={register} className="bg-yellow-400 px-3 py-1 rounded text-black">Register</button>
-          ) : (
-            <button onClick={login} className="bg-yellow-400 px-3 py-1 rounded text-black">Login</button>
-          )}
-
-          <button onClick={()=>setIsRegister(!isRegister)} className="text-sm underline">
-            {isRegister ? "Login" : "Register"}
+      {/* NAVBAR */}
+      <nav className="bg-[#131921] text-white p-3 flex items-center justify-between sticky top-0 z-50">
+        <h1 className="text-xl font-bold px-4 cursor-pointer" onClick={() => setView("shop")}>MyShop</h1>
+        <input 
+          placeholder="Search products..." 
+          className="flex-1 max-w-xl mx-4 p-2 rounded text-black outline-none"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        <div className="flex gap-6 px-4 items-center">
+          <button onClick={() => setView("shop")} className={view === "shop" ? "text-yellow-400" : ""}>Home</button>
+          <button onClick={() => setView("orders")} className={view === "orders" ? "text-yellow-400" : ""}>My Orders</button>
+          <button onClick={() => setView("cart")} className="relative font-bold">
+            Cart <span className="bg-orange-500 rounded-full px-2 text-xs ml-1">{cartItems.length}</span>
           </button>
+          <button onClick={() => setUser(null)} className="text-sm">Logout</button>
         </div>
-      )}
+      </nav>
 
-      <button
-        onClick={()=>setShowCart(true)}
-        className="bg-yellow-400 text-black px-3 py-1 rounded font-semibold"
-      >
-        Cart ({cartItems.length})
-      </button>
-    </div>
+      <div className="flex">
+        {/* --- SIDEBAR FILTERS --- */}
+        {view === "shop" && (
+          <aside className="w-64 bg-white min-h-screen p-6 shadow-sm hidden md:block">
+            <h3 className="font-bold text-lg mb-4">Filters</h3>
+            
+            <div className="mb-6">
+              <p className="font-semibold mb-2">Category</p>
+              {["All", "Mobile", "Laptop", "Watch"].map(cat => (
+                <label key={cat} className="flex items-center gap-2 mb-1 cursor-pointer hover:text-orange-600">
+                  <input type="radio" name="cat" checked={category === cat} onChange={() => setCategory(cat)} />
+                  {cat}
+                </label>
+              ))}
+            </div>
 
-    {/* 🔥 MAIN */}
-    <div className="flex p-6 gap-6">
+            <div className="mb-6">
+              <p className="font-semibold mb-2">Max Price: ₹{priceRange}</p>
+              <input 
+                type="range" min="10000" max="150000" step="5000" 
+                value={priceRange} onChange={(e) => setPriceRange(e.target.value)}
+                className="w-full cursor-pointer accent-orange-500"
+              />
+            </div>
 
-      {/* 🔥 SIDEBAR */}
-      <div className="w-64 bg-white p-4 rounded shadow sticky top-24 h-fit">
-        <h3 className="font-bold text-lg mb-2">Filters</h3>
+            {/* CLEAR FILTERS BUTTON */}
+            <button 
+              onClick={clearFilters}
+              className="w-full py-2 border border-gray-300 rounded text-sm font-semibold hover:bg-gray-50 transition"
+            >
+              Clear All Filters
+            </button>
+          </aside>
+        )}
 
-        <button onClick={resetFilters} className="text-blue-600 mb-3 text-sm">
-          Reset
-        </button>
+        {/* MAIN CONTENT AREA */}
+        <main className="flex-1">
+          {view === "shop" && (
+            <div className="p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+              {products.map(p => (
+                <div key={p.id} className="bg-white p-4 rounded shadow-sm hover:shadow-md transition border border-gray-100">
+                  <img src={p.image} className="h-44 w-full object-contain mb-4" alt="" />
+                  <h3 className="font-bold truncate text-sm">{p.name}</h3>
+                  <p className="text-green-700 font-bold text-lg">₹{p.price}</p>
+                  <button className="bg-yellow-400 w-full mt-3 py-1 rounded font-semibold text-sm">Add to Cart</button>
+                </div>
+              ))}
+            </div>
+          )}
 
-        <p className="font-semibold">Category</p>
-        <label className="block text-sm">
-          <input
-            type="radio"
-            checked={filters.category==="mobile"}
-            onChange={()=>setFilters(p=>({...p,category:"mobile"}))}
-          /> Mobile
-        </label>
+          {/* VIEW: CART */}
+          {view === "cart" && (
+            <div className="max-w-5xl mx-auto p-8 flex flex-col lg:flex-row gap-8">
+              <div className="flex-1 bg-white p-6 rounded shadow-sm">
+                <h2 className="text-2xl font-bold border-b pb-4 mb-4">Your Cart</h2>
+                {cartWithDetails.length === 0 ? <p className="text-gray-400">Cart is empty</p> : cartWithDetails.map(item => (
+                  <div key={item.id} className="flex gap-6 border-b py-4 items-center">
+                    <img src={item.details?.image} className="h-20 w-20 object-contain" alt="" />
+                    <div className="flex-1">
+                      <p className="font-bold">{item.details?.name || "Loading..."}</p>
+                      <p className="text-green-600 font-bold">₹{item.details?.price || 0}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              
+              <div className="w-96 bg-white p-6 rounded shadow-sm h-fit">
+                <h3 className="font-bold text-lg mb-4">Payment Summary</h3>
+                <div className="flex justify-between mb-2"><span>Subtotal:</span><span>₹{subtotal}</span></div>
+                <div className="flex justify-between font-bold text-xl text-red-700 border-t pt-2 mb-6">
+                  <span>Total (GST 18%):</span><span>₹{total.toFixed(2)}</span>
+                </div>
+                <input placeholder="Address" className="w-full border p-2 mb-2 rounded" onChange={e => setAddress(e.target.value)} />
+                <input placeholder="Pincode" className="w-full border p-2 mb-4 rounded" onChange={e => setPincode(e.target.value)} />
+                <button onClick={handleCheckout} className="w-full bg-[#FF9900] py-3 rounded-lg font-bold shadow hover:bg-orange-500">
+                  Checkout & Pay
+                </button>
+              </div>
+            </div>
+          )}
 
-        <p className="font-semibold mt-3">Brand</p>
-        {uniqueBrands.map(b=>(
-          <label key={b} className="block text-sm">
-            <input
-              type="checkbox"
-              checked={filters.brands.includes(b)}
-              onChange={()=>handleCheckbox("brands",b)}
-            /> {b}
-          </label>
-        ))}
-
-        <p className="font-semibold mt-3">Color</p>
-        {uniqueColors.map(c=>(
-          <label key={c} className="block text-sm">
-            <input
-              type="checkbox"
-              checked={filters.colors.includes(c)}
-              onChange={()=>handleCheckbox("colors",c)}
-            /> {c}
-          </label>
-        ))}
+          {/* VIEW: ORDERS */}
+          {view === "orders" && (
+            <div className="max-w-4xl mx-auto p-10">
+              <h2 className="text-2xl font-bold mb-6 text-center">My Order Tracking</h2>
+              {myOrders.length === 0 ? <p className="text-center bg-white p-10 rounded shadow">No orders found.</p> : myOrders.map(o => (
+                <div key={o.id} className="bg-white p-6 rounded shadow-sm mb-4 border-l-4 border-green-500">
+                  <div className="flex justify-between font-bold">
+                    <span>Order ID: {o.id}</span>
+                    <span className="text-green-600">Paid</span>
+                  </div>
+                  <p className="text-blue-600 text-sm mt-2">Tracking ID: <b>{o.tracking}</b></p>
+                </div>
+              ))}
+            </div>
+          )}
+        </main>
       </div>
 
-      {/* 🔥 PRODUCTS */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 flex-1">
-        {products.map(p=>(
-          <div
-            key={p.id}
-            className="bg-white p-4 rounded shadow hover:shadow-xl transition duration-300 flex flex-col"
-          >
-            <img
-              src={p.image}
-              className="h-44 object-contain cursor-pointer"
-              onClick={() => setSelectedProduct(p)}
-            />
-
-            <button
-              onClick={()=>toggleWishlist(p)}
-              className="text-right text-xl"
-            >
-              {wishlist.find(w=>w.id===p.id) ? "❤️" : "🤍"}
-            </button>
-
-            <h3 className="font-semibold mt-2 text-sm">{p.name}</h3>
-
-            <p className="text-green-600 font-bold text-lg">₹{p.price}</p>
-
-            <button
-              onClick={()=>addToCart(p.id)}
-              className="mt-auto bg-yellow-400 hover:bg-yellow-500 text-black py-2 rounded font-semibold"
-            >
-              Add to Cart
-            </button>
+      {/* SUCCESS POPUP */}
+      {orderStatus && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="bg-white p-10 rounded-2xl text-center max-w-sm">
+            <div className="text-green-500 text-6xl mb-4">✅</div>
+            <h2 className="text-2xl font-bold mb-2">Order Confirmed!</h2>
+            <p className="text-gray-500 mb-6 font-mono text-sm">Tracking: {orderStatus.tracking}</p>
+            <button onClick={() => {setOrderStatus(null); setView("orders");}} className="bg-gray-800 text-white w-full py-2 rounded">Track My Order</button>
           </div>
-        ))}
-      </div>
-
-      {/* 🔥 ORDER SUMMARY */}
-      {showSummary && (
-        <div className="fixed right-0 top-0 w-96 bg-white p-5 h-full shadow-xl">
-          <h2 className="font-bold text-xl mb-3">Order Summary</h2>
-
-          <p className="mb-3">
-            Total: ₹{cartItems.reduce((sum, item) =>
-              sum + item.product.price * item.quantity, 0)}
-          </p>
-
-          <input
-            placeholder="Address"
-            onChange={(e)=>setAddress(e.target.value)}
-            className="border p-2 w-full mb-2"
-          />
-
-          <input
-            placeholder="Pincode"
-            onChange={(e)=>setPincode(e.target.value)}
-            className="border p-2 w-full mb-2"
-          />
-
-          <button
-  type="button"
-  onClick={handleCheckout}
-  className="bg-green-600 text-white w-full p-2 rounded"
->
-  Checkout
-</button>
-
-          <button
-  onClick={()=>{
-  setShowSummary(false);   // ✅ CLOSE summary
-}}
-  
-  className="bg-green-600 text-white w-full mt-3 p-2 rounded"
->
-  Checkout
-</button>
         </div>
       )}
     </div>
-
-    {/* 🔥 CART DRAWER */}
-    {showCart && (
-      <div className="fixed right-0 top-0 w-96 h-full bg-white shadow-xl p-5">
-        <h2 className="text-xl font-bold mb-3">Cart</h2>
-
-        {cartItems.map(item=>(
-          <div key={item.id} className="border-b py-2 flex justify-between">
-            <span>{item.product.name}</span>
-            <button
-              onClick={()=>removeItem(item.id)}
-              className="text-red-500 text-sm"
-            >
-              Remove
-            </button>
-          </div>
-        ))}
-
-        <input placeholder="Address" onChange={e=>setAddress(e.target.value)} className="border p-2 w-full mt-3"/>
-        <input placeholder="Pincode" onChange={e=>setPincode(e.target.value)} className="border p-2 w-full mt-2"/>
-
-        <button
-          onClick={()=>setShowSummary(true)}
-          className="bg-green-600 text-white w-full mt-3 p-2 rounded"
-        >
-          Checkout
-        </button>
-
-        <button onClick={()=>setShowCart(false)} className="mt-2 w-full text-sm">
-          Close
-        </button>
-      </div>
-    )}
-  </div>
-);
+  );
 }
 
 export default App;
